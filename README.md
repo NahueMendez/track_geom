@@ -4,7 +4,7 @@ This repository contains the development files for a low-cost portable trolley i
 [![Licencia](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Estado del Proyecto](https://img.shields.io/badge/Estado-En%20Desarrollo-yellow)](https://github.com/NahuelDMendez/carrito_cenadif/tree/main)
 [![Lenguaje Principal](https://img.shields.io/badge/Lenguaje-C-blue)](https://www.python.org/)
-[![Última Versión](https://img.shields.io/badge/Release-v0.1.0-blue)](https://github.com/NahuelDMendez/carrito_cenadif/releases/tag/v0.1.0)
+[![Última Versión](https://img.shields.io/badge/Release-v0.1.0-blue)](https://github.com/NahuelDMendez/carrito_cenadif/releases/tag/v1.0)
 
 ## Tabla de Contenidos
 - [Descripción del Proyecto](#descripción-del-proyecto)
