@@ -1,0 +1,7 @@
+Lugar de prueba:Saldías, Retiro. CABA
+Ramal/Linea de prueba:C14 - FC Belgrano
+Dia de prueba:15/04/2024
+Cliente:BCyL
+PK inicio:14.356
+Latitud de referencia:-34.57695643117602
+Longitud de referencia:-58.3935960889612
