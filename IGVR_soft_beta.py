@@ -11,6 +11,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 import base64
 import os
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
+tolerancias_por_clase = {
+    'I':   {'trocha_sup': 1037, 'trocha_inf': 990,  'peralte_sup': 110, 'peralte_inf': -110, 'alabeo_sup': 51},
+    'II':  {'trocha_sup': 1035, 'trocha_inf': 991,  'peralte_sup': 110, 'peralte_inf': -110, 'alabeo_sup': 42},
+    'III': {'trocha_sup': 1032, 'trocha_inf': 992,  'peralte_sup': 110, 'peralte_inf': -110, 'alabeo_sup': 36},
+    'IV':  {'trocha_sup': 1029, 'trocha_inf': 992,  'peralte_sup': 110, 'peralte_inf': -110, 'alabeo_sup': 33},
+    'V':   {'trocha_sup': 1026, 'trocha_inf': 993,  'peralte_sup': 110,  'peralte_inf': -110,  'alabeo_sup': 28},
+}
+
 
 def haversine(lon1, lat1, lon2, lat2):
     """
@@ -39,17 +50,12 @@ def limpiar_gps(df_sucio):
         pd.DataFrame: DataFrame con NaN en lugar de 'No fix' y 'No data'.
     """
     df = df_sucio.copy()
-    #.Cambio No fix y No data por Nan
-    df['Latitud'] = df['Latitud'].replace(['No fix', 'No data'], np.nan)
-    df['Longitud'] = df['Longitud'].replace(['No fix', 'No data'], np.nan)
-    df['Velocidad(km/h)'] = df['Velocidad(km/h)'].replace(['0.0'], np.nan)
-    df = df.infer_objects(copy=False) #inferir tipos antes de interpolar.
-    
     # Convertir a numérico con errores a NaN y luego inferir objetos
-    df['Latitud'] = pd.to_numeric(df['Latitud'], errors='coerce')
-    df['Longitud'] = pd.to_numeric(df['Longitud'], errors='coerce')
-    df['Velocidad(km/h)'] = pd.to_numeric(df['Velocidad(km/h)'], errors='coerce')
-
+    df['Latitud'] = pd.to_numeric(df['Latitud'].replace(['No fix', 'No data'], np.nan).astype(float), errors='coerce')
+    df['Longitud'] = pd.to_numeric(df['Longitud'].replace(['No fix', 'No data'], np.nan).astype(float), errors='coerce')
+    df['Velocidad(km/h)'] = pd.to_numeric(df['Velocidad(km/h)'].replace('0.0', np.nan).astype(float), errors='coerce')
+    df = df.infer_objects(copy=False)
+    
     #.Interpolo linealmente
     # Verificar si hay suficientes datos para interpolar
     valid_lat_long = (~df['Latitud'].isna() & ~df['Longitud'].isna()).sum()
@@ -99,13 +105,18 @@ def graficar_trayectoria(df, test_number,dia,zona,nombre_mapa="trayectoria.html"
 if __name__ == "__main__":
     #.Datos operativos
     metadatos=pd.read_csv('metadatos.txt',sep=':',header=None)
-    zona=metadatos[metadatos[0]=='Lugar de prueba'][1].values[0]
-    ramal=metadatos[metadatos[0]=='Ramal/Linea de prueba'][1].values[0]
-    dia=metadatos[metadatos[0]=='Dia de prueba'][1].values[0]
-    cliente=metadatos[metadatos[0]=='Cliente'][1].values[0]
-    lat_ref=float(metadatos[metadatos[0]=='Latitud de referencia'][1].values[0])
-    lon_ref=float(metadatos[metadatos[0]=='Longitud de referencia'][1].values[0])
-    pk_inicial=float(metadatos[metadatos[0]=='PK inicio'][1].values[0])
+    zona=metadatos[metadatos[0]=='Lugar de prueba'][1].values[0].strip()
+    ramal=metadatos[metadatos[0]=='Ramal/Linea de prueba'][1].values[0].strip()
+    dia=metadatos[metadatos[0]=='Dia de prueba'][1].values[0].strip()
+    cliente=metadatos[metadatos[0]=='Cliente'][1].values[0].strip()
+    lat_ref=float(metadatos[metadatos[0]=='Latitud de referencia'][1].values[0].strip())
+    lon_ref=float(metadatos[metadatos[0]=='Longitud de referencia'][1].values[0].strip())
+    pk_inicial=float(metadatos[metadatos[0]=='PK inicio'][1].values[0].strip())
+    clase_via = metadatos[metadatos[0] == 'Clase de via'][1].values[0].strip()
+    print(f"Clase de vía: {clase_via}")
+    #.Sentido de la medición
+    sentido = float(metadatos[metadatos[0]=='Sentido'][1].values[0])
+    print(f"Sentido de la medición: {'Ascendente' if sentido == 1 else 'Descendente'}")
     # Ejemplo de DataFrame (reemplaza esto con tus datos)
     data_raw = pd.read_csv('track.txt',header=0)
     #.Inicios
@@ -155,7 +166,17 @@ if __name__ == "__main__":
             print(f"Advertencia: No hay datos GPS válidos para la prueba {test_number}. Pasando a la siguiente.")
             test_number += 1
             continue
-
+        #.Ajustamos el sentido de la medición
+        if sentido == -1:  # Si el sentido es negativo, invertir las columnas
+            df_clean['Distancia(m)'] = df_clean['Distancia(m)']*(-1)
+            sentido_med='Descendente'
+        else:
+            sentido_med='Ascendente'
+        #.Ajusto la distancia acumulada
+        if df_clean['Distancia(m)'].isna().all():
+            print(f"Advertencia: No hay datos de distancia válidos para la prueba {test_number}. Pasando a la siguiente.")
+            test_number += 1
+            continue
         #.Corregimos y acumulamos distancia
         df_clean['Distancia(m)']=df_clean['Distancia(m)']+distancia_acumulada+(pk_inicial * 1000)
         distancia_acumulada += df_clean['Distancia(m)'].iloc[-1] - (pk_inicial * 1000)
@@ -169,11 +190,17 @@ if __name__ == "__main__":
         
         #.Localizo eventos:
         # Definir las tolerancias
-        tolerancia_trocha_superior = 1037
-        tolerancia_trocha_inferior = 990
-        tolerancia_peralte_superior = 110
-        tolerancia_peralte_inferior = -110
-        tolerancia_alabeo_superior = 53
+        t = tolerancias_por_clase.get(clase_via)
+
+        if t is None:
+            print(f"Advertencia: Clase de vía {clase_via} no reconocida. Se usarán tolerancias por defecto (clase I).")
+            t = tolerancias_por_clase['I']
+            
+        tolerancia_trocha_superior = t['trocha_sup']
+        tolerancia_trocha_inferior = t['trocha_inf']
+        tolerancia_peralte_superior = t['peralte_sup']
+        tolerancia_peralte_inferior = t['peralte_inf']
+        tolerancia_alabeo_superior = t['alabeo_sup']
 
          #.Calculo el alabeo
         progresivas_alabeo=np.arange(df_clean['Distancia(m)'].min(),df_clean['Distancia(m)'].max(),3)
@@ -223,7 +250,7 @@ if __name__ == "__main__":
 
         ax[2].hlines(tolerancia_alabeo_superior,df_clean['Distancia(m)'].min(),df_clean['Distancia(m)'].max(),color='r',linestyle='--',label='Límite')
         ax[2].plot(progresivas_alabeo,np.abs(alabeo),c='tab:orange',label='Medición')
-        ax[2].set_ylabel('Alabeo [mm/m]',fontfamily='Times New Roman',fontsize=12)
+        ax[2].set_ylabel('Variación de desnivel transv. [mm/m]',fontfamily='Times New Roman',fontsize=12)
         ax[2].set_xlabel('Progresiva [m]',fontfamily='Times New Roman',fontsize=16)
         ax[2].grid(True)
         ax[2].set_ylim(0,70)
@@ -266,11 +293,11 @@ if __name__ == "__main__":
             sizes_alabeo = [1 - np.mean(df_clean['fuera_alabeo'].fillna(False)), np.mean(df_clean['fuera_alabeo'].fillna(False))]
             colors_alabeo = ['lightgreen', 'lightcoral']
             axes_pie[2].pie(sizes_alabeo, labels=labels_alabeo, autopct='%1.1f%%', startangle=90, colors=colors_alabeo)
-            axes_pie[2].set_title(f'Alabeo - Prueba {test_number}')
+            axes_pie[2].set_title(f'Variación de desnivel transv.- Prueba {test_number}')
             axes_pie[2].axis('equal')
         else:
             axes_pie[2].axis('off') # Si no hay datos de alabeo, ocultar el subplot
-            axes_pie[2].set_title(f'Alabeo - Prueba {test_number} (Sin datos)')
+            axes_pie[2].set_title(f'Variación del desnivel transv. - Prueba {test_number} (Sin datos)')
             
         plt.tight_layout()
         nombre_pie = f'pie_tolerancias_{test_number}.png'
@@ -281,11 +308,7 @@ if __name__ == "__main__":
         name_excel=f"medicion_{test_number}.xlsx"
         df_clean.to_excel(os.path.join(sheets_path,name_excel),sheet_name='Datos',index=False)
         #.-----------------------------------Armo un pequeño reporte----------------------------
-        mapa_html = mapa._repr_html_()
-        mapa_base64 = base64.b64encode(mapa_html.encode('latin1')).decode('latin1')
-        
-
-        
+               
         with open(os.path.join(plots_path,nombre_imagen), "rb") as image_file:
             medicion_base64 = base64.b64encode(image_file.read()).decode('utf-8')
         with open(os.path.join(plots_path,nombre_pie), "rb") as image_file:
@@ -325,7 +348,8 @@ if __name__ == "__main__":
              <img src="data:image/png;base64,{logo_base64}" alt="TIA S.A" class="imagen-esquina">
             
             <p> <b>Cliente: </b>{cliente} </br> <b>Fecha del relevamiento: </b>{dia} </br> <b>Lugar del relevamiento: </b>{zona} </br>
-            <b>Ramal/Línea: </b>{ramal} </br> <b>Número de prueba: </b>{test_number} </br>  </p>
+            <b>Ramal/Línea: </b>{ramal} </br> <b>Número de prueba: </b>{test_number} </br>
+            <b>PK inicio: </b>{pk_inicial}  -  <b>Sentido: </b>{sentido_med} </br>  </p>
             
             <h3>Magnitudes geométricas registradas</h3>
             <img src="data:image/png;base64,{medicion_base64}" width="900" alt="Data of sensors">
@@ -334,7 +358,7 @@ if __name__ == "__main__":
             <img src="data:image/png;base64,{stats_base64}" width="900" alt="Data of sensors">
             
             <h3>Mapa del trayecto relevado</h3>
-            <iframe src="data:text/html;base64,{mapa_base64}" width="900" height="300"> class="mapa-iframe</iframe>
+            <iframe src="../maps/{mapa_name}" width="900" height="300" class="mapa-iframe"></iframe>
         
             <p> Todos los derechos reservados &#174;</p>
         </body>
